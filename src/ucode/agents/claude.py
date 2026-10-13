@@ -2274,6 +2274,10 @@ def launch(
             routing_setup_failed = True
         else:
             return
+    else:
+        # If smart routing is not enabled by any environment flags, then remove the
+        # /smart-router and smart router orchestrator skills
+        smart_routing_v2.remove_smart_router_session_skills(AGENT_CLAUDE)
     if workspace and not custom_oauth_cli_enabled(state.get("custom_oauth")):
         os.environ["OAUTH_TOKEN"] = get_databricks_token(workspace, state.get("profile"))
     settings_override = None
@@ -2313,6 +2317,8 @@ def launch(
         }
         settings_override = _merge_claude_settings(settings_override or {}, {"env": fallback_env})
         os.environ.update(fallback_env)
+        # Setup installed the controls before it failed, and this launch has no mod for them.
+        smart_routing_v2.remove_smart_router_session_skills(AGENT_CLAUDE)
     exec_or_spawn(_build_claude_argv(binary, launch_args, settings_override=settings_override))
 
 
