@@ -3374,6 +3374,19 @@ def _launch_tool(
                 resolved_model = model
         if model and tool == "claude" and not provider:
             route_root_model = None
+        # List the gateway's models in ug's own /model picker so GPT rows get the `[1m]` hint.
+        # Claude Code's own discovery lists them without it, so they would run at 200K.
+        if tool == "claude" and managed is None and not provider and not parent_schema:
+            discovered = list_anthropic_model_catalog(
+                state["workspace"],
+                get_databricks_token(state["workspace"], state.get("profile")),
+            )
+            if discovered.model_ids:
+                picker_catalog = claude_agent.default_model_picker_catalog(
+                    state.get("claude_models") or {},
+                    launch_model=model or forwarded_model,
+                    discovered_catalog=discovered,
+                )
         if coding_agent_config_defaults and not state.get("claude_static_models") and not relayed:
             picker_catalog = claude_agent.default_model_picker_catalog(
                 coding_agent_config_defaults,
@@ -3394,7 +3407,12 @@ def _launch_tool(
             coding_agent_config_defaults=coding_agent_config_defaults,
             parent_schema=parent_schema,
         )
-        if picker_catalog and picker_catalog.model_ids:
+        # A plain launch keeps Claude Code's own starting model, as its own picker did.
+        if (
+            picker_catalog
+            and picker_catalog.model_ids
+            and (managed is not None or provider or parent_schema)
+        ):
             # Claude re-adds an out-of-catalog saved model to /model even when built-ins are
             # replaced. Keep the catalog launch-scoped and leave the user's settings alone.
             state["_claude_launch_picker_models"] = picker_catalog.model_ids

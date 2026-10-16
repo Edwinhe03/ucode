@@ -47,6 +47,7 @@ from ucode.databricks import (
     build_otel_traces_endpoint,
     build_tool_base_url,
     get_databricks_token,
+    maybe_add_gpt_1m_suffix,
     ug_binary,
 )
 from ucode.launcher import exec_or_spawn
@@ -541,7 +542,7 @@ def render_overlay(
     # on the routed model rather than the family default.
     _ = model  # API stability; no longer pinned via env.
     if route_root_model:
-        env["ANTHROPIC_MODEL"] = route_root_model
+        env["ANTHROPIC_MODEL"] = maybe_add_gpt_1m_suffix(route_root_model)
     # A Bedrock-backed provider needs its provider-side ids pinned verbatim
     # (Claude Code's canonical names aren't routable there). These come from the
     # service's targets, already de-duped to one id per family upstream.
@@ -600,7 +601,10 @@ def render_overlay(
         overlay["enforceAvailableModels"] = True
         overlay["modelPicker"] = {
             "replaceBuiltInOptions": True,
-            "options": [{"model": m, "label": _picker_label(m)} for m in static_models],
+            "options": [
+                {"model": maybe_add_gpt_1m_suffix(m), "label": _picker_label(m)}
+                for m in static_models
+            ],
         }
         keys += [[key] for key in CLAUDE_MANAGED_PICKER_KEYS]
     elif picker_catalog and picker_catalog.model_ids and not relayed:
@@ -608,7 +612,7 @@ def render_overlay(
             "replaceBuiltInOptions": True,
             "options": [
                 _picker_option(
-                    model,
+                    maybe_add_gpt_1m_suffix(model),
                     picker_catalog.model_id_to_display_name.get(model) or _picker_label(model),
                     picker_catalog.model_id_to_description.get(model),
                 )
@@ -666,11 +670,12 @@ def _picker_option(model: str, label: str, description: str | None = None) -> di
 
 
 def _maybe_add_1m_suffix(model: str) -> str:
+    """Add Claude Code's `[1m]` hint to Claude Opus/Sonnet 4.6+ ids and GPT ids except gpt-oss."""
     if model.endswith("[1m]"):
         return model
     match = _CLAUDE_MODEL_RE.match(model)
     if not match:
-        return model
+        return maybe_add_gpt_1m_suffix(model)
 
     family, major_raw, minor_raw, _ = match.groups()
     major = int(major_raw)
@@ -2309,6 +2314,9 @@ def launch(
         os.environ["ANTHROPIC_DEFAULT_MODEL"] = launch_default_model
     # Smart routing also spawns Claude directly, so it needs the native executable.
     binary = _resolve_launch_binary(binary)
+    pinned_model = (
+        maybe_add_gpt_1m_suffix(options.user_pinned_model) if options.user_pinned_model else None
+    )
     routing_setup_failed = False
     if options.launch_smart_routing:
         try:
@@ -2318,7 +2326,7 @@ def launch(
                 binary=binary,
                 user_settings_path=CLAUDE_USER_SETTINGS_PATH,
                 # With no user pin, let Claude resolve its starting model from its own settings.
-                launch_model=options.user_pinned_model,
+                launch_model=pinned_model,
                 compose_settings=_compose_v2_settings,
                 launch_model_args=_launch_model_args,
                 model_name=_maybe_add_1m_suffix,
@@ -2332,12 +2340,12 @@ def launch(
         os.environ["OAUTH_TOKEN"] = get_databricks_token(workspace, state.get("profile"))
     settings_override = None
     launch_args = list(tool_args)
-    if options.user_pinned_model:
+    if pinned_model:
         # Pass the exact ID: managed family defaults can override temporary aliases.
-        os.environ["ANTHROPIC_MODEL"] = options.user_pinned_model
-        settings_override = {"env": {"ANTHROPIC_MODEL": options.user_pinned_model}}
+        os.environ["ANTHROPIC_MODEL"] = pinned_model
+        settings_override = {"env": {"ANTHROPIC_MODEL": pinned_model}}
         launch_args = [
-            *_launch_model_args(tool_args, options.user_pinned_model),
+            *_launch_model_args(tool_args, pinned_model),
             *tool_args,
         ]
     else:

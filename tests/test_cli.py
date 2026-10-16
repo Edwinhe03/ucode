@@ -67,6 +67,19 @@ def no_state_writes():
         yield
 
 
+@pytest.fixture(autouse=True)
+def no_gateway_catalog_fetch(monkeypatch):
+    """Keep plain Claude launches off real auth and the network; an empty catalog falls back."""
+    monkeypatch.setattr(cli_mod, "get_databricks_token", lambda *_args, **_kwargs: "token")
+    monkeypatch.setattr(
+        cli_mod,
+        "list_anthropic_model_catalog",
+        lambda *_args, **_kwargs: db_mod.AnthropicModelCatalog(
+            model_ids=[], model_id_to_display_name={}
+        ),
+    )
+
+
 MINIMAL_STATE = {
     "workspace": "https://example.databricks.com",
     "base_urls": {
@@ -774,9 +787,8 @@ class TestSubcommandRouting:
         assert "Model: system.ai.gpt-5-6-luna" not in output
         assert mock_launch.call_args.args[2] == forwarded_args
 
-    @pytest.mark.parametrize("persisted_provider", [None, "main.default.anthropic"])
-    def test_unmanaged_claude_launch_keeps_native_defaults(self, persisted_provider):
-        with _launch_policy_patches(None, persisted_provider=persisted_provider) as calls:
+    def test_unmanaged_claude_launch_with_saved_provider_keeps_native_defaults(self):
+        with _launch_policy_patches(None, persisted_provider="main.default.anthropic") as calls:
             result = runner.invoke(app, ["claude"])
 
         assert result.exit_code == 0, result.output
@@ -785,10 +797,35 @@ class TestSubcommandRouting:
         assert calls["configure"].call_args.kwargs["picker_catalog"] is None
         assert "_claude_launch_picker_models" not in calls["launch"].call_args.args[1]
         assert "_claude_launch_default_model" not in calls["launch"].call_args.args[1]
-        if persisted_provider:
-            calls["resolve_model"].assert_not_called()
-        else:
-            calls["resolve_model"].assert_called_once()
+        calls["resolve_model"].assert_not_called()
+        calls["launch"].assert_called_once()
+
+    def test_unmanaged_claude_launch_lists_gateway_catalog(self):
+        with _launch_policy_patches(None) as calls:
+            result = runner.invoke(app, ["claude"])
+
+        assert result.exit_code == 0, result.output
+        assert os.environ["ENABLE_CLAUDE_CODE_GATEWAY_MODEL_DISCOVERY"] == "1"
+        calls["list_catalog"].assert_called_once_with("https://example.databricks.com", "token")
+        picker = calls["configure"].call_args.kwargs["picker_catalog"]
+        # The saved family default leads; discovered models follow.
+        assert picker.model_ids == ["databricks-claude-sonnet-4", "main.default.claude-sonnet-5"]
+        launch_state = calls["launch"].call_args.args[1]
+        assert "_claude_launch_picker_models" not in launch_state
+        assert "_claude_launch_default_model" not in launch_state
+        calls["resolve_model"].assert_called_once()
+
+    def test_unmanaged_claude_launch_falls_back_to_native_discovery(self):
+        with _launch_policy_patches(None) as calls:
+            calls["list_catalog"].return_value = db_mod.AnthropicModelCatalog(
+                model_ids=[], model_id_to_display_name={}, error_msg="HTTP 503"
+            )
+            result = runner.invoke(app, ["claude"])
+
+        assert result.exit_code == 0, result.output
+        assert os.environ["ENABLE_CLAUDE_CODE_GATEWAY_MODEL_DISCOVERY"] == "1"
+        assert calls["configure"].call_args.kwargs["picker_catalog"] is None
+        assert "_claude_launch_picker_models" not in calls["launch"].call_args.args[1]
         calls["launch"].assert_called_once()
 
     def test_claude_model_location_replaces_builtin_models(self):
@@ -1614,10 +1651,16 @@ class TestClaudeModelFlag:
             == "system.ai.claude-opus-4-8"
         )
 
-    @pytest.mark.parametrize("model", ["system.ai.claude-sonnet-4-5", "system.ai.gpt-5-6-luna"])
+    @pytest.mark.parametrize(
+        ("model", "expected_model"),
+        [
+            ("system.ai.claude-sonnet-4-5", "system.ai.claude-sonnet-4-5"),
+            ("system.ai.gpt-5-6-luna", "system.ai.gpt-5-6-luna[1m]"),
+        ],
+    )
     @pytest.mark.parametrize("equals_form", [False, True], ids=["separate", "equals"])
     def test_unmanaged_claude_model_reaches_native_launcher(
-        self, monkeypatch, tmp_path, model, equals_form
+        self, monkeypatch, tmp_path, model, expected_model, equals_form
     ):
         """No workspace policy/catalog: explicit IDs reach native --model, not opus aliases."""
         from ucode.agents import claude
@@ -1650,11 +1693,10 @@ class TestClaudeModelFlag:
         assert "_claude_launch_picker_models" not in calls["launch"].call_args.args[1]
         assert "claude_static_models" not in calls["launch"].call_args.args[1]
         assert calls["configure"].call_args.kwargs["custom_model"] is None
-        calls["list_catalog"].assert_not_called()
         assert len(native_calls) == 1
-        assert native_calls[0][3:] == ["--model", model]
+        assert native_calls[0][3:] == ["--model", expected_model]
         settings = json.loads(native_calls[0][2])
-        assert settings["env"]["ANTHROPIC_MODEL"] == model
+        assert settings["env"]["ANTHROPIC_MODEL"] == expected_model
         for key, value in original_settings["env"].items():
             assert settings["env"][key] == value
         assert json.loads(settings_path.read_text()) == original_settings
