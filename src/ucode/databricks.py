@@ -229,6 +229,7 @@ def _log_auth_diagnostics() -> None:
             capture_output=True,
             text=True,
             timeout=10,
+            stdin=subprocess.DEVNULL,
         )
         version = (version_result.stdout or version_result.stderr or "").strip()
         _debug("databricks --version", version[:200])
@@ -242,6 +243,7 @@ def _log_auth_diagnostics() -> None:
             capture_output=True,
             text=True,
             timeout=10,
+            stdin=subprocess.DEVNULL,
         )
         _debug(
             "databricks auth profiles",
@@ -689,7 +691,11 @@ def run(
         text=text,
         env=env,
         timeout=timeout,
-        **({"stdout": status_subprocess_stdout()} if not capture_output else {}),
+        **(
+            {"stdin": subprocess.DEVNULL}
+            if capture_output
+            else {"stdout": status_subprocess_stdout()}
+        ),
     )
 
 
@@ -895,6 +901,9 @@ def _refresh_windows_path() -> None:
         if expanded and normalized not in known:
             new_entries.append(expanded)
             known.add(normalized)
+    if not new_entries:
+        return
+    # Writing renames the inherited `Path` to `PATH` for child processes, so only write on change.
     os.environ["PATH"] = os.pathsep.join([*new_entries, *entries])
     clear_databricks_cli_cache()
 
@@ -1988,10 +1997,9 @@ def build_auth_shell_command(
     Used where a tool wants the helper as one command *string* (Claude Code's
     `apiKeyHelper`). On every platform this resolves to the `ug auth-token`
     executable rather than a POSIX shell pipeline, so no `sh`/`jq` is required."""
-    argv = build_auth_token_argv(workspace, profile, use_pat=use_pat)
-    if platform.system() == "Windows":
-        return subprocess.list2cmdline(argv)
-    return shlex.join(argv)
+    return subprocess_cross_os.shell_command(
+        build_auth_token_argv(workspace, profile, use_pat=use_pat)
+    )
 
 
 def build_otel_headers_argv(
@@ -2010,10 +2018,9 @@ def build_otel_headers_shell_command(
     workspace: str, profile: str | None = None, *, use_pat: bool = False
 ) -> str:
     """Shell-quoted form of :func:`build_otel_headers_argv`."""
-    argv = build_otel_headers_argv(workspace, profile, use_pat=use_pat)
-    if platform.system() == "Windows":
-        return subprocess.list2cmdline(argv)
-    return shlex.join(argv)
+    return subprocess_cross_os.shell_command(
+        build_otel_headers_argv(workspace, profile, use_pat=use_pat)
+    )
 
 
 # A model-service's `name` is `model-services/system.ai.<model-name>`; the
