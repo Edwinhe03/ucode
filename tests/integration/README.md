@@ -1,5 +1,9 @@
 # Integration tests
 
+Claude answer delivery has offline transcript and subprocess coverage in
+`../test_claude_answer_delivery.py`. Live model/gateway selection and capability-hook
+activation are not covered here; interactive selection is unsupported.
+
 The separate [dedicated-workspace CUJ](../e2e_cuj/AGENTS.md) lives in `tests/e2e_cuj/`
 and runs directly with pytest. It does not use this suite's runner or config fixtures.
 It reuses the session, terminal, file-task, and transcript helpers in `utils/`.

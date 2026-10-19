@@ -34,6 +34,32 @@ Role instructions belong in each task prompt because routing may replace the
 requested Claude role or Codex model. Hook approval in the native `/hooks` UI
 is still required where the harness prompts for it.
 
+## Claude answer delivery
+
+Orchestrated Claude print-mode launches (`ug claude -- -p`) let the parent deliver an
+accepted child answer verbatim. The parent ends with a selection or a composition:
+
+```json
+{"use_agent_answer":"<agentId>"}
+{"answer_parts":["Introduction\n\n",{"use_agent_answer":"<agentId>"},"\n\nAdditional findings"]}
+```
+
+Parts are joined unchanged; the parent remains responsible for acceptance. Each child
+must belong directly to this session and have completed its latest revision successfully.
+A `SendMessage` resume invalidates its previous answer. Background answers must match
+their completion notification. Invalid selections fail with a nonzero exit status.
+
+The launcher buffers native stream-json output until exit, then renders the requested
+text, JSON or stream-json format. It rewrites the final root text and result, retaining
+usage, costs, stderr and exit status. Partial events stay raw. The result's
+`ug_answer_delivery` field and session-local `claude-answer-delivery-receipts.json`
+record selection receipts with hashes, without answer bodies.
+
+`--input-format stream-json` bypasses delivery and first-prompt routing so native control
+responses and multi-turn input remain live. Interactive Claude and Codex also retain
+normal answers. Hooks advertise selection only while the buffering launch's capability
+marker exists next to the session-control file.
+
 ## Task ownership
 
 Both workflows keep easy work in the root and delegate only when a child can own
