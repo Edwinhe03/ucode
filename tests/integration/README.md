@@ -1,5 +1,18 @@
 # Integration tests
 
+The spend-status client's workspace authentication, optional percentage handling,
+pagination, validation, and failure propagation are covered by component tests in
+`../test_budget.py`, importing the client from `src/ucode/budget.py`.
+Account-authentication checks are replaced by assertions that
+the client reuses the workspace token without starting CLI auth. These checks do not
+establish live workspace, sign-in, or CLI output coverage.
+Client component tests also preserve unknown nonempty scope/period strings without
+losing known limits, and reject malformed enum types and invalid/negative/nonfinite
+amounts. Zero and fractional decimal strings remain valid. Explicit nulls in
+percent consumed, spend, and threshold are treated like missing optional fields,
+individually or together, without discarding valid statuses. Redundant client error
+variants are reduced to one opaque passthrough case; later-page failure checks remain.
+
 Claude answer delivery has offline transcript and subprocess coverage in
 `../test_claude_answer_delivery.py`, including stdout preservation for text, JSON and
 streaming JSON when UG redirects diagnostics to stderr. Live model/gateway selection
