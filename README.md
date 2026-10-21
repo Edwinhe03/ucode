@@ -273,9 +273,20 @@ ug skills remove --location main.default --via mcp
 | `ug skills remove` | Remove skill MCP scopes or downloaded skills |
 | `ug export` | Print or write portable managed config JSON |
 | `ug doctor` | Diagnose local setup and offer fixes |
-| `ug usage` | Show AI Gateway spend and budget |
+| `ug usage` | Show Unity Gateway spend and budget |
 | `ug revert` | Clear saved state and restore backed-up config files |
 | `ug upgrade` | Upgrade Unity Gateway |
+
+`ug usage` shows your Unity Gateway budget usage. To try the expanded budget view:
+
+```bash
+ENABLE_UG_USAGE_SPEND_API=1 ug usage
+```
+
+The expanded view shows up to five budget limits, prioritizing the most-used limits
+across personal/shared and daily/monthly budgets. It tells you when more limits exist.
+It uses your configured workspace login; no separate login is needed.
+Leave `ENABLE_UG_USAGE_SPEND_API` unset to keep the standard summary.
 
 Databricks AI Tools are installed only by `ug configure`, never by agent launch
 commands. Use `--enable-databricks-ai-tools` or `--disable-databricks-ai-tools`
