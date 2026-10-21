@@ -115,7 +115,15 @@ ug configure
 ug configure --agents claude,codex
 ug configure --workspace https://first.databricks.com
 ug configure --profile DEFAULT --agents claude,codex
+ug configure --user
 ```
+
+`--global` (the default) writes the machine-wide Claude Code and Codex managed settings with sudo.
+`--user` skips them, like `UG_SKIP_OS_SETTINGS`, and needs no sudo; use it when you launch through
+`ug`. Configure fails while a managed file for the agent exists, since managed settings take
+precedence; later launches use whatever files are present.
+The choice is saved for launches after a successful configure; `ug configure` without `--user`
+and `ug revert` return to `--global`.
 
 Available coding agents are `codex`, `claude`, `gemini`, `opencode`,
 `copilot`, and `pi`. `cursor` can be included in `--agents` for MCP-only setup;
