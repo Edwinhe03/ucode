@@ -57,7 +57,7 @@ from ucode.os_compatibility.file_lock_cross_os import (
     release_file_lock,
 )
 from ucode.state import is_tool_managed, mark_tool_managed, save_state
-from ucode.telemetry import agent_version, ug_version
+from ucode.telemetry import agent_version, ucode_user_agent, ug_version
 from ucode.ui import print_warning
 
 from .args import LaunchOptions
@@ -655,7 +655,9 @@ def _token_provider(state: dict) -> Callable[[bool], str]:
 
 def proxy_headers(state: dict) -> dict[str, str]:
     """Headers the proxy adds to every gateway request; admin-managed headers win by name."""
-    headers = {"User-Agent": f"ucode/{ug_version()} copilot/{agent_version(SPEC['binary'])}"}
+    headers = {
+        "User-Agent": ucode_user_agent(ug_version(), f"copilot/{agent_version(SPEC['binary'])}")
+    }
     request_tags = request_tags_header_value()
     if request_tags:
         headers[AI_GATEWAY_REQUEST_TAGS_HEADER] = request_tags
