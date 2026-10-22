@@ -101,8 +101,17 @@ The Claude mod entry point has separate native component checks in
 `../native_claude/test_mod.py`. Claude 2.1.290 validates the module and runs its
 TypeScript event-forwarding and launch-option tests in a dedicated CI job. The
 existing Claude skill-toggle journey checks the live recipe payload field across on/off/on.
-The required Isaac feedback form and evidence submission need a separate manual
-Isaac check. The gateway toggle journey does not cover the form.
+The required Isaac feedback form, evidence submission, and background delivery
+notifications need a separate manual Isaac check. The gateway toggle journey does
+not cover the form or notification timing. Use the released Isaac skill with the
+existing capture/retry CLI to check native category selection and retries,
+immediate form dismissal without model requests, and completion during another task.
+Verify the original task stays selected when a new prompt precedes capture, and
+routing settings stay fixed across subsequent toggles. Check immutable saved
+evidence, upload permission denials, local previews, and text-only Other reports.
+In a session launched with routing, check that `/isaac-feedback` remains asynchronous
+after routing is turned off. A session launched without routing should use the
+existing feedback skill without loading the router plugin.
 
 The existing unit tests keep their fixtures. Integration has an independent
 pytest configuration and uses `--confcutdir` so those fixtures cannot leak in.
