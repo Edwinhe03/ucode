@@ -176,6 +176,9 @@ cover Desktop token-only stdout, explicit workspace/profile arguments, interacti
 browser recovery, bounded login/lock waits, cancellation, and lock contention.
 Recovery regressions check token recheck before browser login, lock release after
 success/failure, one shared deadline, and network/CLI failures at each recovery stage.
+Proxy bridge coverage also checks that unauthenticated tool discovery exposes a temporary
+authentication tool, advertises dynamic tool-list changes, refreshes the real tools after login,
+and tells the model to retry the original request in the same turn.
 Invalid token output must not appear in helper errors or stdout/stderr.
 Shared CLI discovery selects the newest absolute binary for cached tokens and every
 recovery subprocess; a missing CLI fails before token fetch or browser login.
@@ -230,8 +233,19 @@ changing the UUID, and configure/revert warnings on profile-lock timeout without
 changing profile or selection-state files. An existing reserved UUID without records
 is replaced on configure and deleted on revert. Workspace changes reuse the same file.
 CLI revert clears workspace state even when Desktop cleanup fails. A lock-failure
-regression verifies that Desktop files and previous-selection state survive, then
-retry deletes the UG profile and restores the previous selection without workspace state.
+regression invokes the Typer CLI and checks exit code 1, one warning, and a failed
+Desktop summary while profile and previous-selection files survive. Retry returns
+exit code 0, deletes the UG profile, and restores the previous selection without
+workspace state; a repeated revert also returns 0.
+
+`test_cowork_plugin.py` covers active Cowork-root discovery, ambiguous-profile refusal,
+generated marketplace/plugin/MCP manifests, current-workspace managed-skill selection,
+Claude-only MCP filtering, absolute proxy executables, saved PAT mode, custom-OAuth refusal,
+install/update selection, idempotent cleanup, and saved-root removal. CLI component tests
+cover managed setup after successful skill/MCP reconciliation, preservation after transient
+reconciliation failures, and cleanup for unmanaged or non-Claude configurations. These tests
+mock the Claude plugin CLI and do not establish native Desktop policy, account-feature,
+late MCP connection, tool discovery, or inference behavior.
 
 Model-source tests require Desktop-only, case-insensitive `\bclaude-` filtering
 instead of copying every catalog entry. Mixed static/discovered lists exclude GPT/OSS
@@ -302,7 +316,8 @@ Fake CLI subprocesses check that re-auth runs only when a successful help probe
 advertises `--no-browser`. Search component tests verify token reuse and transient
 timeout retries. `test_mcp_connection_login.py` verifies token/failure invalidation
 after successful and failed login attempts; `test_mcp_proxy.py` checks fresh tokens
-on async post-login retries. These checks do not establish live login or
+on async post-login retries and recovery when a connection-backed service returns
+the MCP authentication-required error. These checks do not establish live login or
 launch-time savings.
 
 `test_mcp_web_search_concurrency.py` drives the real stdio dispatcher with controlled
