@@ -457,6 +457,11 @@ Claude checks local mod confirmations and the inference payload's `smart_router_
 Codex checks saved session controls and native tool-result confirmations after each toggle.
 Both explicitly request their children,
 including while routing is off.
+Claude's six toggle variants are temporarily non-blocking on Linux and Windows; required
+Smoke, Full, and Managed config lanes deselect `soft_fail` cases. A separate
+Soft-fail journeys lane still runs every assertion and uploads evidence on both platforms.
+Codex toggles, direct routing hooks, CUJ4, and routing component tests remain required.
+See [the generic soft-fail marker, evidence, and restoration criteria](integration/README.md#soft-fail-tests).
 The managed-fixture banner journeys separately cover the selector unset (managed default) and
 `first_prompt_and_subagent_no_orch_v0` for real first-prompt tasks.
 Preset parameterization augments only routing hooks, skill toggles, and first-prompt routing;
