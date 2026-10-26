@@ -1464,13 +1464,9 @@ _PROVIDER_CONFIG_KEYS = ("model_provider", "model_providers")
 def _app_server_launch_layers(profile_doc: dict, tool_args: list[str]) -> tuple[dict, list[str]]:
     """Split ucode's config for an ``app-server`` launch into defaults and provider overrides.
 
-    A process that runs ``codex app-server`` (an orchestrator such as Omnigent) passes
-    its own ``-c`` after ucode's, and Codex keeps the last value. So ucode's provider
-    keys follow its arguments and win, as ucode's gateway settings already do over a
-    caller's Claude ``--settings``, while defaults such as ``model`` stay first so the
-    caller's session model applies. Nobody can finish a browser sign-in for such a
-    server, so its auth helper fails fast on a dead login instead of waiting for one.
-    Other launches are returned unchanged.
+    Codex keeps the last ``-c``, so the provider keys follow the caller's arguments and
+    win, as ucode's settings do for Claude; ``model`` stays first. No one can finish a
+    browser sign-in for a server, so its auth fails fast instead.
 
     :param profile_doc: The ucode Codex config layer for this launch.
     :param tool_args: The arguments forwarded to Codex.
