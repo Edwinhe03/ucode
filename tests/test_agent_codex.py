@@ -1472,6 +1472,51 @@ class TestCodexLaunch:
 
         assert launches == []
 
+    def test_app_server_provider_overrides_follow_the_callers(self, tmp_path, monkeypatch):
+        """A wrapping orchestrator's later `-c` can't replace ucode's provider, only defaults."""
+        launches = self._patch(tmp_path, monkeypatch)
+        profile_path = tmp_path / "ucode.config.toml"
+        profile_path.write_text(
+            'model = "databricks-gpt"\n' + profile_path.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        caller = ["app-server", "--listen", "ws://127.0.0.1:1", "-c", 'model_provider="other"']
+
+        codex.launch({"workspace": WS}, list(caller), options=LaunchOptions())
+
+        argv = launches[0]
+        start = argv.index("app-server")
+        assert argv[start : start + len(caller)] == caller
+        before, after = argv[:start], argv[start + len(caller) :]
+        assert 'model="databricks-gpt"' in before
+        assert 'model_provider="Databricks"' in after
+        assert any(arg.startswith("model_providers.Databricks=") for arg in after)
+        assert not any(arg.startswith(("model_provider=", "model_providers.")) for arg in before)
+
+    def test_app_server_auth_never_waits_for_a_browser_sign_in(self, tmp_path, monkeypatch):
+        launches = self._patch(tmp_path, monkeypatch)
+        profile_path = tmp_path / "ucode.config.toml"
+        profile_path.write_text(
+            profile_path.read_text(encoding="utf-8")
+            + "\n[model_providers.Databricks.auth]\n"
+            + 'command = "ug"\n'
+            + 'args = ["auth-token", "--host", "h", "--browser-login"]\n',
+            encoding="utf-8",
+        )
+        before = profile_path.read_text(encoding="utf-8")
+
+        codex.launch({"workspace": WS}, ["app-server"], options=LaunchOptions())
+        codex.launch({"workspace": WS}, [], options=LaunchOptions())
+
+        app_server_provider, terminal_provider = (
+            next(arg for arg in argv if arg.startswith("model_providers.Databricks="))
+            for argv in launches
+        )
+        assert "--browser-login" not in app_server_provider
+        assert "auth-token" in app_server_provider
+        assert "--browser-login" in terminal_provider
+        assert profile_path.read_text(encoding="utf-8") == before
+
     def test_non_provider_launch_removes_stale_provider_header(self, tmp_path, monkeypatch):
         launches = self._patch(tmp_path, monkeypatch)
         profile_path = tmp_path / "ucode.config.toml"
@@ -1666,9 +1711,12 @@ class TestCodexLaunch:
 
         codex.launch({"workspace": WS}, tool_args, options=LaunchOptions())
 
-        assert launches[0][0] == "codex"
-        assert "--profile" not in launches[0]
-        assert launches[0][-len(tool_args) :] == tool_args
+        argv = launches[0]
+        assert argv[0] == "codex"
+        assert "--profile" not in argv
+        # ucode's provider overrides follow an app-server's arguments (see the app-server tests).
+        start = argv.index("app-server") if tool_args[0] == "app-server" else -len(tool_args)
+        assert argv[start : start + len(tool_args) or None] == tool_args
         assert 'model_provider="Databricks"' in launches[0]
         provider_arg = next(
             arg for arg in launches[0] if arg.startswith("model_providers.Databricks=")

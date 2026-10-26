@@ -1457,6 +1457,39 @@ def _launch_codex_with_otel_proxy(
     raise SystemExit(returncode)
 
 
+# Keys that choose and authenticate the inference provider.
+_PROVIDER_CONFIG_KEYS = ("model_provider", "model_providers")
+
+
+def _app_server_launch_layers(profile_doc: dict, tool_args: list[str]) -> tuple[dict, list[str]]:
+    """Split ucode's config for an ``app-server`` launch into defaults and provider overrides.
+
+    A process that runs ``codex app-server`` (an orchestrator such as Omnigent) passes
+    its own ``-c`` after ucode's, and Codex keeps the last value. So ucode's provider
+    keys follow its arguments and win, as ucode's gateway settings already do over a
+    caller's Claude ``--settings``, while defaults such as ``model`` stay first so the
+    caller's session model applies. Nobody can finish a browser sign-in for such a
+    server, so its auth helper fails fast on a dead login instead of waiting for one.
+    Other launches are returned unchanged.
+
+    :param profile_doc: The ucode Codex config layer for this launch.
+    :param tool_args: The arguments forwarded to Codex.
+    :returns: ``(defaults, tool_args)`` with the provider overrides appended to the args.
+    """
+    if tool_args[:1] != ["app-server"]:
+        return profile_doc, tool_args
+    defaults = dict(profile_doc)
+    provider = copy.deepcopy(
+        {key: defaults.pop(key) for key in _PROVIDER_CONFIG_KEYS if key in defaults}
+    )
+    providers = provider.get("model_providers")
+    for entry in providers.values() if isinstance(providers, dict) else ():
+        auth = entry.get("auth") if isinstance(entry, dict) else None
+        if isinstance(auth, dict) and isinstance(auth.get("args"), list):
+            auth["args"] = [arg for arg in auth["args"] if arg != "--browser-login"]
+    return defaults, [*tool_args, *codex_config_args(provider)]
+
+
 def _run_codex(
     state: dict,
     base_argv: list[str],
@@ -1581,9 +1614,10 @@ def launch(
                 slugs = catalog_slugs(catalog)
                 if slugs:
                     profile_doc["model"] = slugs[0]
+    defaults, tool_args = _app_server_launch_layers(profile_doc, tool_args)
     _run_codex(
         state,
-        [binary, *codex_config_args(profile_doc)],
+        [binary, *codex_config_args(defaults)],
         tool_args,
         otel_tracing=otel_tracing,
         workspace=workspace,

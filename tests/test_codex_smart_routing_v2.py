@@ -107,7 +107,14 @@ class TestLaunchCodex:
             options=LaunchOptions(),
         )
 
-        assert launches == [["codex", "--config", 'model_provider="ucode-databricks"', *tool_args]]
+        provider = ["--config", 'model_provider="ucode-databricks"']
+        # ucode's provider overrides follow an app-server's arguments so they win.
+        expected = (
+            ["codex", *tool_args, *provider]
+            if tool_args[:1] == ["app-server"]
+            else ["codex", *provider, *tool_args]
+        )
+        assert launches == [expected]
 
     def test_codex_launch_normalizes_cached_bootstrap_model(self, monkeypatch):
         calls = []
