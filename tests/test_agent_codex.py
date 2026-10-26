@@ -1493,28 +1493,23 @@ class TestCodexLaunch:
         assert any(arg.startswith("model_providers.Databricks=") for arg in after)
         assert not any(arg.startswith(("model_provider=", "model_providers.")) for arg in before)
 
-    def test_app_server_auth_never_waits_for_a_browser_sign_in(self, tmp_path, monkeypatch):
+    def test_only_app_server_launches_disable_browser_sign_in(self, tmp_path, monkeypatch):
+        """No one can finish a browser sign-in for a server; other launches keep it."""
+        env_var = codex.NO_BROWSER_LOGIN_ENV_VAR
         launches = self._patch(tmp_path, monkeypatch)
-        profile_path = tmp_path / "ucode.config.toml"
-        profile_path.write_text(
-            profile_path.read_text(encoding="utf-8")
-            + "\n[model_providers.Databricks.auth]\n"
-            + 'command = "ug"\n'
-            + 'args = ["auth-token", "--host", "h", "--browser-login"]\n',
-            encoding="utf-8",
+        seen: list[str | None] = []
+        monkeypatch.setattr(
+            codex,
+            "exec_or_spawn",
+            lambda argv: (launches.append(argv), seen.append(os.environ.get(env_var))),
         )
+        profile_path = tmp_path / "ucode.config.toml"
         before = profile_path.read_text(encoding="utf-8")
 
-        codex.launch({"workspace": WS}, ["app-server"], options=LaunchOptions())
         codex.launch({"workspace": WS}, [], options=LaunchOptions())
+        codex.launch({"workspace": WS}, ["app-server"], options=LaunchOptions())
 
-        app_server_provider, terminal_provider = (
-            next(arg for arg in argv if arg.startswith("model_providers.Databricks="))
-            for argv in launches
-        )
-        assert "--browser-login" not in app_server_provider
-        assert "auth-token" in app_server_provider
-        assert "--browser-login" in terminal_provider
+        assert seen == [None, "1"]
         assert profile_path.read_text(encoding="utf-8") == before
 
     def test_non_provider_launch_removes_stale_provider_header(self, tmp_path, monkeypatch):

@@ -56,6 +56,7 @@ from ucode.custom_oauth import (
     launch_token,
 )
 from ucode.databricks import (
+    NO_BROWSER_LOGIN_ENV_VAR,
     CodexCatalogSource,
     CodexMpsModelCatalogUnavailable,
     _fetch_codex_model_catalog,
@@ -1474,15 +1475,7 @@ def _app_server_launch_layers(profile_doc: dict, tool_args: list[str]) -> tuple[
     if tool_args[:1] != ["app-server"]:
         return profile_doc, tool_args
     defaults = dict(profile_doc)
-    provider = copy.deepcopy(
-        {key: defaults.pop(key) for key in _PROVIDER_CONFIG_KEYS if key in defaults}
-    )
-    providers = provider.get("model_providers")
-    # No one can finish a browser sign-in for a server, so a dead login should fail fast.
-    for entry in providers.values() if isinstance(providers, dict) else ():
-        auth = entry.get("auth") if isinstance(entry, dict) else None
-        if isinstance(auth, dict) and isinstance(auth.get("args"), list):
-            auth["args"] = [arg for arg in auth["args"] if arg != "--browser-login"]
+    provider = {key: defaults.pop(key) for key in _PROVIDER_CONFIG_KEYS if key in defaults}
     return defaults, [*tool_args, *codex_config_args(provider)]
 
 
@@ -1611,6 +1604,9 @@ def launch(
                 if slugs:
                     profile_doc["model"] = slugs[0]
     defaults, tool_args = _app_server_launch_layers(profile_doc, tool_args)
+    if tool_args[:1] == ["app-server"]:
+        # No one can finish a browser sign-in for a server, so a dead login should fail fast.
+        os.environ[NO_BROWSER_LOGIN_ENV_VAR] = "1"
     _run_codex(
         state,
         [binary, *codex_config_args(defaults)],

@@ -2585,6 +2585,24 @@ class TestGetDatabricksToken:
         assert "opening browser" not in out
         assert "opening browser" in err
 
+    def test_no_browser_login_env_var_fails_fast_despite_the_flag(self, tmp_path, monkeypatch):
+        # A server's helper can't be signed in for, so the env var overrides --browser-login.
+        login_called = tmp_path / "login-called"
+        env = self._fake_databricks(
+            tmp_path,
+            "if sys.argv[1:3] == ['auth', 'login'] and '--help' not in sys.argv:\n"
+            f"    Path({str(login_called)!r}).touch()\n"
+            "    sys.exit(0)\n"
+            'print(json.dumps({"message": "refresh token is invalid"}))\n'
+            "sys.exit(1)",
+        )
+        env[db_mod.NO_BROWSER_LOGIN_ENV_VAR] = "1"
+        monkeypatch.setattr("os.environ", env)
+        monkeypatch.setattr(db_mod, "_BROWSER_LOGIN_LOCK_PATH", tmp_path / "auth-login.lock")
+        with pytest.raises(RuntimeError, match="no access token"):
+            get_databricks_token(WS, browser_login=True)
+        assert not login_called.exists()
+
     def test_browser_login_skips_browser_when_workspace_unreachable(self, tmp_path, monkeypatch):
         # The CLI appends its generic `auth login` trailer to network failures
         # too; those must fail fast instead of opening a browser.

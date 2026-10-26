@@ -96,6 +96,8 @@ _TOKEN_MEMO_DEFAULT_TTL_S = 60
 _TOKEN_MEMO_FAILURE_TTL_S = 60
 # End browser login before Codex's 180 s helper timeout.
 _BROWSER_LOGIN_TIMEOUT_SECONDS = 150
+# Set where no one can finish a browser sign-in, e.g. for a `ug codex app-server` launch.
+NO_BROWSER_LOGIN_ENV_VAR = "UG_NO_BROWSER_LOGIN"
 _BROWSER_LOGIN_LOCK_PATH = APP_DIR / "auth-login.lock"
 _HTTP_GET_RETRYABLE_STATUS_CODES = frozenset({429})
 _HTTP_GET_RETRY_BASE_SECONDS = 1.0
@@ -1765,6 +1767,7 @@ def _fetch_databricks_token_for_profile(
         return "", None
 
     token, lifetime_s = _fetch_with_lock_retry()
+    browser_login = browser_login and os.environ.get(NO_BROWSER_LOGIN_ENV_VAR) != "1"
     if not token and browser_login and not transient_failure:
         # A desktop app's helper has no terminal to finish a non-browser login.
         token, lifetime_s = _browser_login(workspace, profile, env, _fetch_with_lock_retry)
