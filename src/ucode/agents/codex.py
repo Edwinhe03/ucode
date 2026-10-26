@@ -56,7 +56,6 @@ from ucode.custom_oauth import (
     launch_token,
 )
 from ucode.databricks import (
-    NO_BROWSER_LOGIN_ENV_VAR,
     CodexCatalogSource,
     CodexMpsModelCatalogUnavailable,
     _fetch_codex_model_catalog,
@@ -1458,25 +1457,56 @@ def _launch_codex_with_otel_proxy(
     raise SystemExit(returncode)
 
 
-# Keys that choose and authenticate the inference provider.
-_PROVIDER_CONFIG_KEYS = ("model_provider", "model_providers")
+def _without_conflicting_overrides(tool_args: list[str], ucode_args: list[str]) -> list[str]:
+    """Drop the caller's ``-c`` for keys ucode sets on this launch, so ucode's settings apply.
 
+    Mirrors ``ug claude``, where ucode's settings win over a caller's ``--settings``.
+    ``model`` stays the caller's to choose, and anything after ``--`` passes through.
 
-def _app_server_launch_layers(profile_doc: dict, tool_args: list[str]) -> tuple[dict, list[str]]:
-    """Split ucode's config for an ``app-server`` launch into defaults and provider overrides.
-
-    Codex keeps the last ``-c``, so the provider keys follow the caller's arguments and
-    win, as ucode's settings do for Claude; ``model`` stays first.
-
-    :param profile_doc: The ucode Codex config layer for this launch.
     :param tool_args: The arguments forwarded to Codex.
-    :returns: ``(defaults, tool_args)`` with the provider overrides appended to the args.
+    :param ucode_args: ucode's own ``--config`` overrides for this launch.
+    :returns: *tool_args* without the caller's conflicting overrides.
     """
-    if tool_args[:1] != ["app-server"]:
-        return profile_doc, tool_args
-    defaults = dict(profile_doc)
-    provider = {key: defaults.pop(key) for key in _PROVIDER_CONFIG_KEYS if key in defaults}
-    return defaults, [*tool_args, *codex_config_args(provider)]
+    owned = {
+        value.split("=", 1)[0].strip()
+        for flag, value in zip(ucode_args, ucode_args[1:], strict=False)
+        if flag == "--config"
+    } - {"model"}
+
+    def conflicts(key: str) -> bool:
+        return any(
+            key == other or key.startswith(f"{other}.") or other.startswith(f"{key}.")
+            for other in owned
+        )
+
+    end = tool_args.index("--") if "--" in tool_args else len(tool_args)
+    kept: list[str] = []
+    dropped: list[str] = []
+    index = 0
+    while index < end:
+        arg = tool_args[index]
+        if arg in ("-c", "--config") and index + 1 < end:
+            value, width = tool_args[index + 1], 2
+        elif arg.startswith("--config="):
+            value, width = arg.removeprefix("--config="), 1
+        elif arg.startswith("-c") and len(arg) > 2:
+            value, width = arg[2:], 1
+        else:
+            kept.append(arg)
+            index += 1
+            continue
+        key = value.split("=", 1)[0].strip()
+        if conflicts(key):
+            dropped.append(key)
+        else:
+            kept.extend(tool_args[index : index + width])
+        index += width
+    if dropped:
+        print_warning_err(
+            "Ignoring Codex config overrides that Unity Gateway sets: "
+            + ", ".join(dict.fromkeys(dropped))
+        )
+    return [*kept, *tool_args[end:]]
 
 
 def _run_codex(
@@ -1603,14 +1633,13 @@ def launch(
                 slugs = catalog_slugs(catalog)
                 if slugs:
                     profile_doc["model"] = slugs[0]
-    defaults, tool_args = _app_server_launch_layers(profile_doc, tool_args)
-    if tool_args[:1] == ["app-server"]:
-        # No one can finish a browser sign-in for a server, so a dead login should fail fast.
-        os.environ[NO_BROWSER_LOGIN_ENV_VAR] = "1"
+    ucode_args = codex_config_args(profile_doc)
+    # A tracing launch also sets the exporter; only the overlay's keys matter here.
+    tracing_args = codex_config_args(_otel_proxy_overlay("")) if otel_tracing else []
     _run_codex(
         state,
-        [binary, *codex_config_args(defaults)],
-        tool_args,
+        [binary, *ucode_args],
+        _without_conflicting_overrides(tool_args, [*ucode_args, *tracing_args]),
         otel_tracing=otel_tracing,
         workspace=workspace,
     )

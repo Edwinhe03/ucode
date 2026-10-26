@@ -23,14 +23,6 @@ collect_ignore = ["integration", "e2e_cuj", "native_claude"]
 
 
 @pytest.fixture(autouse=True)
-def _clear_no_browser_login(monkeypatch):
-    """An app-server launch sets this in the test process; remove it after each test."""
-    from ucode.databricks import NO_BROWSER_LOGIN_ENV_VAR
-
-    monkeypatch.delenv(NO_BROWSER_LOGIN_ENV_VAR, raising=False)
-
-
-@pytest.fixture(autouse=True)
 def _isolate_ucode_state(tmp_path, monkeypatch):
     """Redirect ucode's state file and APP_DIR to a per-test tmp dir.
 

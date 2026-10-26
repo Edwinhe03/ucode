@@ -1472,45 +1472,88 @@ class TestCodexLaunch:
 
         assert launches == []
 
-    def test_app_server_provider_overrides_follow_the_callers(self, tmp_path, monkeypatch):
-        """A wrapping orchestrator's later `-c` can't replace ucode's provider, only defaults."""
+    @pytest.mark.parametrize(
+        "launch_args",
+        [
+            ["app-server", "--listen", "ws://127.0.0.1:1"],
+            ["exec", "fix it"],
+            ["resume", "--last"],
+            [],
+        ],
+        ids=["app-server", "exec", "resume", "terminal"],
+    )
+    def test_ucode_settings_win_over_conflicting_caller_overrides(
+        self, tmp_path, monkeypatch, capsys, launch_args
+    ):
+        """As for `ug claude`, ucode's settings win and the caller keeps the model."""
         launches = self._patch(tmp_path, monkeypatch)
-        profile_path = tmp_path / "ucode.config.toml"
-        profile_path.write_text(
-            'model = "databricks-gpt"\n' + profile_path.read_text(encoding="utf-8"),
-            encoding="utf-8",
-        )
-        caller = ["app-server", "--listen", "ws://127.0.0.1:1", "-c", 'model_provider="other"']
+        conflicting = [
+            "-c",
+            'model_provider="other"',
+            '--config=model_providers.Databricks.base_url="https://other.example"',
+            '-cmodel_provider="other"',
+        ]
+        kept = [
+            "--config",
+            'model_providers.other={base_url="https://other.example"}',
+            "-c",
+            'model="caller-model"',
+        ]
 
-        codex.launch({"workspace": WS}, list(caller), options=LaunchOptions())
+        codex.launch(
+            {"workspace": WS}, [*launch_args, *conflicting, *kept], options=LaunchOptions()
+        )
 
         argv = launches[0]
-        start = argv.index("app-server")
-        assert argv[start : start + len(caller)] == caller
-        before, after = argv[:start], argv[start + len(caller) :]
-        assert 'model="databricks-gpt"' in before
-        assert 'model_provider="Databricks"' in after
-        assert any(arg.startswith("model_providers.Databricks=") for arg in after)
-        assert not any(arg.startswith(("model_provider=", "model_providers.")) for arg in before)
+        assert argv[-(len(launch_args) + len(kept)) :] == [*launch_args, *kept]
+        assert 'model_provider="Databricks"' in argv
+        assert not any(arg in argv for arg in conflicting if arg != "-c")
+        assert (
+            "Ignoring Codex config overrides that Unity Gateway sets: "
+            "model_provider, model_providers.Databricks.base_url"
+        ) in " ".join(capsys.readouterr().err.split())
 
-    def test_only_app_server_launches_disable_browser_sign_in(self, tmp_path, monkeypatch):
-        """No one can finish a browser sign-in for a server; other launches keep it."""
-        env_var = codex.NO_BROWSER_LOGIN_ENV_VAR
+    def test_overrides_after_double_dash_and_unset_keys_pass_through(
+        self, tmp_path, monkeypatch, capsys
+    ):
         launches = self._patch(tmp_path, monkeypatch)
-        seen: list[str | None] = []
+        args = [
+            "exec",
+            "-c",
+            'model_catalog_json="/caller.json"',
+            "--",
+            "-c",
+            'model_provider="literal"',
+        ]
+
+        codex.launch({"workspace": WS}, list(args), options=LaunchOptions())
+
+        # ucode sets no catalog for this launch, so the caller's stays.
+        assert launches[0][-len(args) :] == args
+        assert "Ignoring" not in capsys.readouterr().err
+
+    def test_ucode_catalog_wins_over_a_caller_catalog(self, tmp_path, monkeypatch, capsys):
+        launches = self._patch(tmp_path, monkeypatch)
+        catalog_path = tmp_path / "models.json"
+        monkeypatch.setattr(codex, "CODEX_MODEL_CATALOG_PATH", tmp_path / "app-catalog.json")
+        monkeypatch.setattr(codex, "_model_catalog_path", lambda workspace, provider: catalog_path)
         monkeypatch.setattr(
             codex,
-            "exec_or_spawn",
-            lambda argv: (launches.append(argv), seen.append(os.environ.get(env_var))),
+            "_fetch_codex_model_catalog",
+            lambda workspace, token, **kwargs: {"models": [{"slug": "gpt-mps"}]},
         )
-        profile_path = tmp_path / "ucode.config.toml"
-        before = profile_path.read_text(encoding="utf-8")
 
-        codex.launch({"workspace": WS}, [], options=LaunchOptions())
-        codex.launch({"workspace": WS}, ["app-server"], options=LaunchOptions())
+        codex.launch(
+            {"workspace": WS, "_codex_launch_provider": "main.default.openai"},
+            ["exec", "-c", 'model_catalog_json="/caller.json"', "hi"],
+            options=LaunchOptions(),
+        )
 
-        assert seen == [None, "1"]
-        assert profile_path.read_text(encoding="utf-8") == before
+        argv = launches[0]
+        assert "model_catalog_json=" + json.dumps(str(catalog_path)) in argv
+        assert 'model_catalog_json="/caller.json"' not in argv
+        assert argv[-2:] == ["exec", "hi"]
+        assert "model_catalog_json" in capsys.readouterr().err
 
     def test_non_provider_launch_removes_stale_provider_header(self, tmp_path, monkeypatch):
         launches = self._patch(tmp_path, monkeypatch)
@@ -1706,12 +1749,9 @@ class TestCodexLaunch:
 
         codex.launch({"workspace": WS}, tool_args, options=LaunchOptions())
 
-        argv = launches[0]
-        assert argv[0] == "codex"
-        assert "--profile" not in argv
-        # ucode's provider overrides follow an app-server's arguments (see the app-server tests).
-        start = argv.index("app-server") if tool_args[0] == "app-server" else -len(tool_args)
-        assert argv[start : start + len(tool_args) or None] == tool_args
+        assert launches[0][0] == "codex"
+        assert "--profile" not in launches[0]
+        assert launches[0][-len(tool_args) :] == tool_args
         assert 'model_provider="Databricks"' in launches[0]
         provider_arg = next(
             arg for arg in launches[0] if arg.startswith("model_providers.Databricks=")
