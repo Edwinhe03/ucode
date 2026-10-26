@@ -1465,8 +1465,7 @@ def _app_server_launch_layers(profile_doc: dict, tool_args: list[str]) -> tuple[
     """Split ucode's config for an ``app-server`` launch into defaults and provider overrides.
 
     Codex keeps the last ``-c``, so the provider keys follow the caller's arguments and
-    win, as ucode's settings do for Claude; ``model`` stays first. No one can finish a
-    browser sign-in for a server, so its auth fails fast instead.
+    win, as ucode's settings do for Claude; ``model`` stays first.
 
     :param profile_doc: The ucode Codex config layer for this launch.
     :param tool_args: The arguments forwarded to Codex.
@@ -1479,6 +1478,7 @@ def _app_server_launch_layers(profile_doc: dict, tool_args: list[str]) -> tuple[
         {key: defaults.pop(key) for key in _PROVIDER_CONFIG_KEYS if key in defaults}
     )
     providers = provider.get("model_providers")
+    # No one can finish a browser sign-in for a server, so a dead login should fail fast.
     for entry in providers.values() if isinstance(providers, dict) else ():
         auth = entry.get("auth") if isinstance(entry, dict) else None
         if isinstance(auth, dict) and isinstance(auth.get("args"), list):
