@@ -167,6 +167,10 @@ Cursor models still run through your Cursor account.
 `UG_WORKSPACE` can provide the default workspace. An explicit `--workspace` or
 `--profile` takes precedence.
 
+`UG_NO_BROWSER_LOGIN=1` stops Codex's auth helper from opening a browser sign-in when the
+Databricks login has expired; it fails right away instead. Set it in the environment of a
+process no one can sign in for, such as a `ug codex app-server` another program starts.
+
 On macOS, Windows, and Linux, successful Claude Code configuration also creates and
 selects a dedicated Claude Desktop gateway profile. Its model list includes only
 Claude-named IDs; Claude Code's catalog is unchanged. Desktop setup errors warn

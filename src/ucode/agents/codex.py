@@ -1457,58 +1457,6 @@ def _launch_codex_with_otel_proxy(
     raise SystemExit(returncode)
 
 
-def _without_conflicting_overrides(tool_args: list[str], ucode_args: list[str]) -> list[str]:
-    """Drop the caller's ``-c`` for keys ucode sets on this launch, so ucode's settings apply.
-
-    Mirrors ``ug claude``, where ucode's settings win over a caller's ``--settings``.
-    ``model`` stays the caller's to choose, and anything after ``--`` passes through.
-
-    :param tool_args: The arguments forwarded to Codex.
-    :param ucode_args: ucode's own ``--config`` overrides for this launch.
-    :returns: *tool_args* without the caller's conflicting overrides.
-    """
-    owned = {
-        value.split("=", 1)[0].strip()
-        for flag, value in zip(ucode_args, ucode_args[1:], strict=False)
-        if flag == "--config"
-    } - {"model"}
-
-    def conflicts(key: str) -> bool:
-        return any(
-            key == other or key.startswith(f"{other}.") or other.startswith(f"{key}.")
-            for other in owned
-        )
-
-    end = tool_args.index("--") if "--" in tool_args else len(tool_args)
-    kept: list[str] = []
-    dropped: list[str] = []
-    index = 0
-    while index < end:
-        arg = tool_args[index]
-        if arg in ("-c", "--config") and index + 1 < end:
-            value, width = tool_args[index + 1], 2
-        elif arg.startswith("--config="):
-            value, width = arg.removeprefix("--config="), 1
-        elif arg.startswith("-c") and len(arg) > 2:
-            value, width = arg[2:], 1
-        else:
-            kept.append(arg)
-            index += 1
-            continue
-        key = value.split("=", 1)[0].strip()
-        if conflicts(key):
-            dropped.append(key)
-        else:
-            kept.extend(tool_args[index : index + width])
-        index += width
-    if dropped:
-        print_warning_err(
-            "Ignoring Codex config overrides that Unity Gateway sets: "
-            + ", ".join(dict.fromkeys(dropped))
-        )
-    return [*kept, *tool_args[end:]]
-
-
 def _run_codex(
     state: dict,
     base_argv: list[str],
@@ -1633,13 +1581,10 @@ def launch(
                 slugs = catalog_slugs(catalog)
                 if slugs:
                     profile_doc["model"] = slugs[0]
-    ucode_args = codex_config_args(profile_doc)
-    # A tracing launch also sets the exporter; only the overlay's keys matter here.
-    tracing_args = codex_config_args(_otel_proxy_overlay("")) if otel_tracing else []
     _run_codex(
         state,
-        [binary, *ucode_args],
-        _without_conflicting_overrides(tool_args, [*ucode_args, *tracing_args]),
+        [binary, *codex_config_args(profile_doc)],
+        tool_args,
         otel_tracing=otel_tracing,
         workspace=workspace,
     )

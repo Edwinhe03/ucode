@@ -96,7 +96,7 @@ _TOKEN_MEMO_DEFAULT_TTL_S = 60
 _TOKEN_MEMO_FAILURE_TTL_S = 60
 # End browser login before Codex's 180 s helper timeout.
 _BROWSER_LOGIN_TIMEOUT_SECONDS = 150
-# Set where no one can finish a browser sign-in, e.g. for a `ug codex app-server` launch.
+# Set by a caller no one can finish a browser sign-in for, e.g. a server another process starts.
 NO_BROWSER_LOGIN_ENV_VAR = "UG_NO_BROWSER_LOGIN"
 _BROWSER_LOGIN_LOCK_PATH = APP_DIR / "auth-login.lock"
 _HTTP_GET_RETRYABLE_STATUS_CODES = frozenset({429})
